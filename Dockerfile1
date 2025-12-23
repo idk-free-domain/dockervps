@@ -1,0 +1,48 @@
+FROM debian:bookworm-slim
+
+# Install dependencies
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    wine-stable qemu-system-x86 qemu-utils \
+    fonts-wqy-zenhei xz-utils dbus-x11 curl firefox-esr \
+    gnome-system-monitor mate-system-monitor git \
+    xfce4 xfce4-terminal tigervnc-standalone-server tigervnc-common \
+    wget supervisor dumb-init procps iproute2 net-tools websockify && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Setup noVNC (using system websockify)
+RUN cd /tmp && \
+    wget https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz && \
+    tar -xzf v1.4.0.tar.gz && \
+    mv noVNC-1.4.0 /opt/noVNC && \
+    rm -rf /tmp/v1.4.0.tar.gz /tmp/noVNC-1.4.0 && \
+    ln -s /usr/bin/websockify /opt/noVNC/utils/websockify
+
+# Create vncuser
+RUN useradd -m -s /bin/bash vncuser && \
+    mkdir -p /home/vncuser/.vnc /tmp/.X11-unix && \
+    chmod 1777 /tmp/.X11-unix && \
+    echo 'admin123' | vncpasswd -f > /home/vncuser/.vnc/passwd && \
+    chmod 600 /home/vncuser/.vnc/passwd && \
+    chown -R vncuser:vncuser /home/vncuser/.vnc
+
+# VNC xstartup
+RUN cat > /home/vncuser/.vnc/xstartup << 'EOF'
+#!/bin/bash
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+[ -r /etc/profile ] && . /etc/profile
+[ -r ~/.profile ] && . ~/.profile
+mkdir -p /tmp/runtime-vncuser
+chmod 700 /tmp/runtime-vncuser
+exec dbus-launch --exit-with-session xfce4-session
+EOF
+RUN chmod +x /home/vncuser/.vnc/xstartup && \
+    chown vncuser:vncuser /home/vncuser/.vnc/xstartup
+
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+EXPOSE 7900
+CMD ["/start.sh"]
